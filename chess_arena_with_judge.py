@@ -3,27 +3,21 @@ import chess.pgn
 from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
 from dotenv import load_dotenv, find_dotenv
 from langchain.memory import ConversationBufferMemory
-
 from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains import LLMChain
-import chess.pgn
 import re
 import os
+
+# Carregar variáveis de ambiente
 _ = load_dotenv(find_dotenv())
 
-# llm = ChatGoogleGenerativeAI(model="gemini-pro")
-
+# Configuração dos modelos de LLM
 white_player = "GPT-4o"
 black_player = "Gemini-Pro"
 llm1 = ChatOpenAI(temperature=0.1, model='gpt-4o')
 llm2 = ChatGoogleGenerativeAI(temperature=0.1, model="gemini-1.5-pro-latest")
-
-# white_player = "Gemini-Pro"
-# black_player = "GPT-4o"
-# llm1 = ChatGoogleGenerativeAI(temperature=0.1, model="gemini-1.5-pro-latest")
-# llm2 = ChatOpenAI(temperature=0.1, model='gpt-4o')
 
 memory = ConversationBufferMemory(memory_key="chat_history", input_key="input")
 memory2 = ConversationBufferMemory(memory_key="chat_history", input_key="input")
@@ -41,7 +35,7 @@ system_template = """
     Do not use any special characters. 
     Give your response in the following order:
 
-    1. Your move, using the following format: My move: "Move" (in the SAN notation, in english).
+    1. Your move, using the following format: My move: "Move" (in the SAN notation, in English).
     2. The explanation, in Portuguese, of why you chose the move, in no more than 3 sentences.
     """
 
@@ -53,10 +47,8 @@ prompt_template2 = ChatPromptTemplate.from_messages([
     ("human", "{input}")])
 
 # Criando os LLMChains
-# chain1 = LLMChain(llm=llm1, prompt=prompt_template1, memory=memory)
-# chain2 = LLMChain(llm=llm2, prompt=prompt_template2, memory=memory2)
-chain1 = prompt_template1 | llm1
-chain2 = prompt_template2 | llm2
+chain1 = LLMChain(llm=llm1, prompt=prompt_template1, memory=memory)
+chain2 = LLMChain(llm=llm2, prompt=prompt_template2, memory=memory2)
 
 judge_template = """
     You are a professional chess arbiter, working on a LLM's Chess Competition.
@@ -82,7 +74,7 @@ judge_template = """
 
 llm3 = ChatGroq(temperature=0, model_name="llama3-70b-8192")
 judge_prompt = PromptTemplate.from_template(template=judge_template)
-chain3 = judge_prompt | llm3
+chain3 = LLMChain(llm=llm3, prompt=judge_prompt)
 
 move_raw = ""
 def get_move(llm_chain, last_move, board, node, color, alert_msg=False):
@@ -132,18 +124,15 @@ def get_move(llm_chain, last_move, board, node, color, alert_msg=False):
                 )
         
     
-    response = llm_chain.invoke({"input": user_input})
-    # move_raw = response["text"].strip()
-    move_raw = response.content.strip()
+    response = llm_chain({"input": user_input})
+    move_raw = response["text"].strip()
     
     try:
         if alert_msg:
             print("Alerting player!")
             print(move_raw)
 
-        move = chain3.invoke({"proposed_move": move_raw,
-                "valid_moves": san_moves
-            }).content.strip()
+        move = chain3({"proposed_move": move_raw, "valid_moves": san_moves})["text"].strip()
         print(f"Old move: {move_raw}")
         print("-----")
         print(f"New move: {move}")
@@ -162,7 +151,7 @@ for move1 in ["1. e4", "1. d4", "1. c4", "1. Nf3", "1. b3", "1. c3", "1. e3", "1
     folder_name = f"{white_player} vs {black_player}"
     if not os.path.exists(folder_name):
         os.makedirs(folder_name)
-    game_num = max([int(i.split("_")[0]) for i in ["0_0"]+ os.listdir(folder_name)]) + 1
+    game_num = max([int(i.split("_")[0]) for i in ["0_0"] + os.listdir(folder_name)]) + 1
 
     print("============")
     print(f"New Game with {move1}")
@@ -192,23 +181,16 @@ for move1 in ["1. e4", "1. d4", "1. c4", "1. Nf3", "1. b3", "1. c3", "1. e3", "1
         while move1 is None:
             alert = False if c == 0 else True
             move1, node = get_move(chain1, move2, board, node, "white", alert)
-            c+=1
+            c += 1
         print("\n========================")
 
         if board.is_game_over():
             break
-        # game = chess.pgn.Game.from_board(board)
-        # print(str(game))
-        # print("\n========================")
 
-        # game = chess.pgn.Game.from_board(board)
         game.headers["White"] = white_player
         game.headers["Black"] = black_player
         with open(f"{folder_name}/{game_num}_game.pgn", "w") as f:
             f.write(str(game))
-        # print("\n========================")
-        # print(game)
-
 
     if board.is_stalemate() or board.is_insufficient_material() or board.is_seventyfive_moves() or board.is_fivefold_repetition():
         result = "1/2-1/2"
